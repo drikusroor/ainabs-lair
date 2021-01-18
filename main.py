@@ -3,6 +3,7 @@ import os
 import requests
 import json
 import random
+from random import randrange
 from replit import db
 
 client = discord.Client()
@@ -13,7 +14,9 @@ games = []
 
 class Player:
 
-  def __init__(self, author, name, hp = 20, ap = 20):
+  def __init__(self, game, author, name, hp = 20, ap = 20):
+    self.type = "PLAYER"
+    self.team = "PLAYERS"
     self.author = author
     self.max_hp = hp
     self.hp = hp
@@ -25,6 +28,41 @@ class Player:
     else:
       self.name = author.name
 
+class Enemy:
+  def __init__(self, game, name, hp = 20, ap = 20):
+    self.game = game
+    self.type = "NPC"
+    self.team = "MONSTERS"
+    self.max_hp = hp
+    self.hp = hp
+    self.max_ap = ap
+    self.ap = ap
+    self.name = name
+
+  async def attack(self, ctx):
+    target = None
+    for player in self.game.players:
+      if player.team == "PLAYERS":
+        target = player
+
+    if target:
+      dmg = randrange(5)
+      target.hp = target.hp - dmg
+      msg = "{name} attacks {target} and deals {dmg} damage. {target} has {hp} hit points left.".format(
+        name = player.name,
+        target = target.name,
+        dmg = dmg,
+        hp = target.hp
+        )
+      await ctx.channel.send(msg)
+      return
+
+    else:
+      msg = "{name} has no one to attack...".format(name = player.name)
+      await ctx.channel.send(msg)
+      return
+      
+
 class Game:
 
   def __init__(self, guild, channel):
@@ -32,10 +70,11 @@ class Game:
     self.guild = guild
     self.channel = channel
     self.state = game_state["NEW"]
+    self.active = None
 
   def get_player(self, author):
     for i, o in enumerate(self.players):
-      if o.author == author:
+      if o.type == "PLAYER" and o.author == author:
         return self.players[i]
     return None
 
@@ -59,6 +98,27 @@ class Game:
     for i, o in enumerate(self.players):
       statuses.append(self.get_readable_player_status(o))
     return "\n".join(statuses)
+
+  async def start(self, ctx):
+    self.state = game_state["PLAYING"]
+    await self.next_turn(ctx)
+    return
+
+  async def next_turn(self, ctx):
+    player = self.players[0]
+    msg = "It is {name}'s turn.".format(name=player.name)
+    await ctx.channel.send(msg)
+    if player.type == "NPC":
+      await player.attack(ctx)
+    
+      if self.active == len(self.players) - 1:
+        self.active = 0
+      else:
+        self.active += 1
+      
+      await self.next_turn(ctx)
+
+    return
 
 def get_quote():
   response = requests.get("https://zenquotes.io/api/random")
@@ -181,7 +241,7 @@ async def on_message(message):
       await message.channel.send(msg)
       return
     else:
-      player = Player(message.author, name)
+      player = Player(game, message.author, name)
       game.players.append(player)
       msg = "Player {name} has joined the game! :fist:".format(name = player.name)
       await message.channel.send(msg)
@@ -189,6 +249,10 @@ async def on_message(message):
 
   if cmd.startswith("leave game"):
     game = get_game()
+    if game.state == game_state["PLAYING"]:
+      msg = "You cannot leave a game once it has started."
+      await message.channel.send(msg)
+      return
     player = game.get_player(message.author)
 
     if player:
@@ -209,6 +273,31 @@ async def on_message(message):
       msg = "Game is fookin' empty mate. Nothing to see here..."
 
     await message.channel.send(msg)
+    return
+  
+  if cmd.startswith("add enemy"):
+    game = get_game()
+    name = "Goblin"
+    enemy = Enemy(game, name, 20, 20)
+    game.players.append(enemy)
+    msg = "An enemy {name} was added to the game! :japanese_goblin:".format(name = name)
+    await message.channel.send(msg)
+    return
+
+  if cmd.startswith("start game"):
+    game = get_game()
+
+    if game.state == game_state["NEW"]:
+      msg = "A new adventure begins... :drum:"
+      await message.channel.send(msg)
+      await game.start(message)
+    elif game.state == game_state["PLAYING"]:
+      msg = "The adventure is already ongoing, you fool! :dog:"
+      await message.channel.send(msg)
+    else:
+      msg = "The adventure has ended already..."
+      await message.channel.send(msg)
+
     return
 
   await message.channel.send(cmd)
