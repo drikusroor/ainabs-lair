@@ -232,11 +232,17 @@ async def on_message(message):
 
     return
 
-  if cmd.startswith("attack enemy"):
+  if cmd.startswith("attack"):
     game = get_game()
-    name = cmd.split("attack enemy ",1)[1]
+    name = cmd.split("attack ",1)[1]
     player = game.get_player(message.author) 
     await player.attack(message, name)
+    return
+
+  if cmd.startswith("insult"):
+    game = get_game()
+    name = cmd.split("insult ",1)[1]
+    message.channel.send('{name}, you {insult}.'.format(name = name, insult = insult_generator.generate_insult()))
     return
 
   if cmd.startswith("report status"):
