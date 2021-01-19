@@ -1,6 +1,9 @@
+from random import randrange
+import asyncio
+
 class Player:
 
-  def __init__(self, game, author, name, hp = 20, ap = 20):
+  def __init__(self, game, author, name, hp = 20, ap = 5):
     self.game = game
     self.type = "PLAYER"
     self.team = "PLAYERS"
@@ -28,6 +31,7 @@ class Player:
         hp = enemy.hp
         )
       await ctx.channel.send(msg)
+      await asyncio.sleep(2)
       self.game.mark_next_player_active()
       await self.game.next_turn(ctx)
       return

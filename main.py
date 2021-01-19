@@ -2,9 +2,12 @@ import discord
 import requests
 import json
 import random
-from random import randrange
+import asyncio
 from decouple import config
+
+# Local imports
 from modules import insult_generator
+from modules.game import Game, game_state
 from modules.player import Player
 from modules.enemy import Enemy
 
@@ -12,74 +15,7 @@ TOKEN = config('TOKEN')
 
 client = discord.Client()
 
-game_state = { "NEW": "NEW", "PLAYING": "PLAYING", "ENDED": "ENDED" }
-
 games = []     
-
-class Game:
-
-  def __init__(self, guild, channel):
-    self.players = []
-    self.guild = guild
-    self.channel = channel
-    self.state = game_state["NEW"]
-    self.active = None
-
-  def get_player(self, author):
-    for i, o in enumerate(self.players):
-      if o.type == "PLAYER" and o.author == author:
-        return self.players[i]
-    return None
-
-  def get_npc_by_name(self, name):
-    for i, o in enumerate(self.players):
-      if o.type == "NPC" and o.name == name:
-        return self.players[i]
-    return None
-
-  def kick_player(self, player):
-    for i, o in enumerate(self.players):
-      if o == player:
-        del self.players[i]
-        break
-    return
-
-  def get_readable_player_status(self, player):
-    return "{name} {hp}/{max_hp}HP {ap}/{max_ap}AP".format(
-      name=player.name,
-      hp=player.hp,max_hp=player.max_hp,
-      ap=player.ap,
-      max_ap=player.max_ap
-      )
-
-  def get_game_status(self):
-    statuses = []
-    for i, o in enumerate(self.players):
-      statuses.append(self.get_readable_player_status(o))
-    return "\n".join(statuses)
-
-  async def start(self, ctx):
-    self.state = game_state["PLAYING"]
-    self.active = 0
-    await self.next_turn(ctx)
-    return
-
-  def mark_next_player_active(self):
-    if self.active == len(self.players) - 1:
-      self.active = 0
-    else:
-      self.active += 1
-
-  async def next_turn(self, ctx):
-    player = self.players[self.active]
-    msg = "It is {name}'s turn.".format(name=player.name)
-    await ctx.channel.send(msg)
-    if player.type == "NPC":
-      await player.attack(ctx)
-      self.mark_next_player_active()
-      await self.next_turn(ctx)
-
-    return
 
 def get_quote():
   response = requests.get("https://zenquotes.io/api/random")
@@ -103,11 +39,16 @@ async def on_message(message):
   guild = message.guild
   channel = message.channel
 
-  def get_game():
+  async def get_game(ctx):
+    game = None
     for i, o in enumerate(games):
       if o.guild.id == guild.id and o.channel.id == channel.id:
-        return games[i]
-    return None
+        game = games[i]
+    
+    if not game:
+      insult = insult_generator.generate_insult()
+      await message.channel.send("There ain't no game, you {insult}".format(insult=insult))
+    return game
 
   if message.author == client.user:
     return
@@ -145,7 +86,7 @@ async def on_message(message):
 
     new_game = Game(message.guild, message.channel)
     games.append(new_game)
-    msg = "A new has been created in #{channel}".format(channel = channel)
+    msg = "A new game has been created in #{channel}".format(channel = channel)
     await message.channel.send(msg)
     return
 
@@ -160,7 +101,8 @@ async def on_message(message):
     return
 
   if cmd.startswith("join game"):
-    game = get_game()
+    game = await get_game(message)
+    if not game: return
     name = message.author.name
 
     try:
@@ -180,7 +122,8 @@ async def on_message(message):
       return
 
   if cmd.startswith("leave game"):
-    game = get_game()
+    game = await get_game(message)
+    if not game: return
     if game.state == game_state["PLAYING"]:
       msg = "You cannot leave a game once it has started."
       await message.channel.send(msg)
@@ -198,7 +141,8 @@ async def on_message(message):
       return
 
   if cmd.startswith("game status"):
-    game = get_game()
+    game = await get_game(message)
+    if not game: return
     msg = game.get_game_status()
 
     if not msg:
@@ -208,16 +152,18 @@ async def on_message(message):
     return
   
   if cmd.startswith("add enemy"):
-    game = get_game()
+    game = await get_game(message)
+    if not game: return
     name = cmd.split("add enemy ",1)[1]
-    enemy = Enemy(game, name, 20, 20)
+    enemy = Enemy(game, name, 20, 5)
     game.players.append(enemy)
     msg = "An enemy {name} was added to the game! :japanese_goblin:".format(name = name)
     await message.channel.send(msg)
     return
 
   if cmd.startswith("start game"):
-    game = get_game()
+    game = await get_game(message)
+    if not game: return
 
     if game.state == game_state["NEW"]:
       msg = "A new adventure begins... :drum:"
@@ -229,18 +175,27 @@ async def on_message(message):
     else:
       msg = "The adventure has ended already..."
       await message.channel.send(msg)
+    return
 
+  if cmd.startswith("init template"):
+    game = await get_game(message)
+    if not game: return
+    name = cmd.split("init template ",1)[1]
+    await game.init_template(message, name)
+    await message.channel.send("Template {name} initialized. :white_check_mark: ".format(name=name))
     return
 
   if cmd.startswith("attack"):
-    game = get_game()
+    game = await get_game(message)
+    if not game: return
     name = cmd.split("attack ",1)[1]
     player = game.get_player(message.author) 
     await player.attack(message, name)
     return
 
   if cmd.startswith("insult"):
-    game = get_game()
+    game = await get_game(message)
+    if not game: return
     name = cmd.split("insult ",1)[1]
     message.channel.send('{name}, you {insult}.'.format(name = name, insult = insult_generator.generate_insult()))
     return

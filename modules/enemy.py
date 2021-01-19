@@ -1,5 +1,7 @@
+from random import randrange
+
 class Enemy:
-  def __init__(self, game, name, hp = 20, ap = 20):
+  def __init__(self, game, name, hp = 20, ap = 5):
     self.game = game
     self.type = "NPC"
     self.team = "MONSTERS"

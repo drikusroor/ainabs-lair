@@ -10,6 +10,7 @@ discord = "^1.0.1"
 replit = "^2.0.0"
 requests = "^2.25.1"
 python-decouple = "^3.4"
+asyncio = "^3.4.3"
 
 [tool.poetry.dev-dependencies]
 
