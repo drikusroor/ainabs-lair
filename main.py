@@ -15,6 +15,7 @@ games = []
 class Player:
 
   def __init__(self, game, author, name, hp = 20, ap = 20):
+    self.game = game
     self.type = "PLAYER"
     self.team = "PLAYERS"
     self.author = author
@@ -27,6 +28,32 @@ class Player:
       self.name = name
     else:
       self.name = author.name
+
+  async def attack(self, ctx, enemy_name):
+    enemy = self.game.get_npc_by_name(enemy_name)
+
+    if enemy:
+      dmg = randrange(6)
+      enemy.hp = enemy.hp - dmg
+      msg = "{name} attacks {target} and deals {dmg} damage. {target} has {hp} hit points left.".format(
+        name = self.name,
+        target = enemy.name,
+        dmg = dmg,
+        hp = enemy.hp
+        )
+      await ctx.channel.send(msg)
+      self.game.mark_next_player_active()
+      await self.game.next_turn(ctx)
+      return
+    else:
+      msg = "{name} wants to attack {enemy_name} but it does not existz! {name} therefore is a Doofus.".format(
+        name = self.name,
+        enemy_name = enemy_name
+        )
+      await ctx.channel.send(msg)
+      return
+
+    
 
 class Enemy:
   def __init__(self, game, name, hp = 20, ap = 20):
@@ -49,7 +76,7 @@ class Enemy:
       dmg = randrange(5)
       target.hp = target.hp - dmg
       msg = "{name} attacks {target} and deals {dmg} damage. {target} has {hp} hit points left.".format(
-        name = player.name,
+        name = self.name,
         target = target.name,
         dmg = dmg,
         hp = target.hp
@@ -78,6 +105,12 @@ class Game:
         return self.players[i]
     return None
 
+  def get_npc_by_name(self, name):
+    for i, o in enumerate(self.players):
+      if o.type == "NPC" and o.name == name:
+        return self.players[i]
+    return None
+
   def kick_player(self, player):
     for i, o in enumerate(self.players):
       if o == player:
@@ -101,21 +134,23 @@ class Game:
 
   async def start(self, ctx):
     self.state = game_state["PLAYING"]
+    self.active = 0
     await self.next_turn(ctx)
     return
 
+  def mark_next_player_active(self):
+    if self.active == len(self.players) - 1:
+      self.active = 0
+    else:
+      self.active += 1
+
   async def next_turn(self, ctx):
-    player = self.players[0]
+    player = self.players[self.active]
     msg = "It is {name}'s turn.".format(name=player.name)
     await ctx.channel.send(msg)
     if player.type == "NPC":
       await player.attack(ctx)
-    
-      if self.active == len(self.players) - 1:
-        self.active = 0
-      else:
-        self.active += 1
-      
+      self.mark_next_player_active()
       await self.next_turn(ctx)
 
     return
@@ -146,7 +181,7 @@ async def on_ready():
 
 @client.event
 async def on_message(message):
-
+  
   guild = message.guild
   channel = message.channel
 
@@ -277,7 +312,7 @@ async def on_message(message):
   
   if cmd.startswith("add enemy"):
     game = get_game()
-    name = "Goblin"
+    name = cmd.split("add enemy ",1)[1]
     enemy = Enemy(game, name, 20, 20)
     game.players.append(enemy)
     msg = "An enemy {name} was added to the game! :japanese_goblin:".format(name = name)
@@ -300,6 +335,26 @@ async def on_message(message):
 
     return
 
-  await message.channel.send(cmd)
+  if cmd.startswith("attack enemy"):
+    game = get_game()
+    name = cmd.split("attack enemy ",1)[1]
+    player = game.get_player(message.author) 
+    await player.attack(message, name)
+    return
+
+  if cmd.startswith("report status"):
+    numbers = [1,2,3,4,5,6,7]
+    chosen = random.choice(numbers)
+    statuses = [
+      "{number}: Injured.".format(number=chosen), 
+      "{number}: Where are you?".format(number=chosen),
+      "{number}: Low ammo.".format(number=chosen),
+      "{author}: Oh no, #{number} is down".format(author=message.author.name, number=chosen)
+    ]
+    msg = random.choice(statuses)
+    await message.channel.send(msg)
+    return
+  
+  await message.channel.send('Not a valid command, {name}. You moron.'.format(name = message.author.name))
 
 client.run(os.getenv('TOKEN'))
